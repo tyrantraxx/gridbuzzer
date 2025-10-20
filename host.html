@@ -177,11 +177,11 @@
 
         // --- Socket 事件 ---
         socket.on('host:playerJoined', (seat) => {
-            document.getElementById(`seat-${seat}`) ? .classList.add('connected');
+            document.getElementById(`seat-${seat}`)  .classList.add('connected');
         });
 
         socket.on('host:playerLeft', (seat) => {
-            document.getElementById(`seat-${seat}`) ? .classList.remove('connected', 'active', 'locked');
+            document.getElementById(`seat-${seat}`)  .classList.remove('connected', 'active', 'locked');
         });
 
         socket.on('host:updateGridState', ({
@@ -191,8 +191,8 @@
             // 先清除舊狀態
             document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('active', 'locked'));
             // 設定新狀態
-            active.forEach(seat => document.getElementById(`seat-${seat}`) ? .classList.add('active'));
-            locked.forEach(seat => document.getElementById(`seat-${seat}`) ? .classList.add('locked'));
+            active.forEach(seat => document.getElementById(`seat-${seat}`)  .classList.add('active'));
+            locked.forEach(seat => document.getElementById(`seat-${seat}`)  .classList.add('locked'));
         });
 
         socket.on('host:logBuzz', ({
@@ -214,5 +214,6 @@
         drawGrid();
     </script>
 </body>
+
 
 </html>
