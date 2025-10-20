@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridBuzzer - 老師控制台</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+        }
+        
+        .controls,
+        .logs {
+            min-width: 300px;
+        }
+        
+        #grid-container {
+            display: grid;
+            border: 1px solid #ccc;
+        }
+        
+        .grid-cell {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 1px solid #eee;
+            background-color: #f0f0f0;
+            color: #aaa;
+        }
+        
+        .grid-cell.connected {
+            background-color: #d0e0ff;
+            color: #333;
+        }
+        
+        .grid-cell.active {
+            background-color: #a0f0a0;
+            border: 2px solid green;
+        }
+        
+        .grid-cell.locked {
+            background-color: #ffc0c0;
+        }
+        
+        #log-valid,
+        #log-invalid {
+            height: 300px;
+            border: 1px solid #ccc;
+            overflow-y: auto;
+            padding: 5px;
+        }
+        
+        h3 {
+            margin-top: 0;
+        }
+        
+        button {
+            font-size: 16px;
+            padding: 8px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-grid">
+        <h2>座位圖</h2>
+        <div id="grid-container"></div>
+    </div>
+
+    <div class="controls">
+        <h2>控制面板</h2>
+        <div>
+            <label>橫排(Rows): <input type="number" id="txtRows" value="6"></label>
+            <label>直排(Cols): <input type="number" id="txtCols" value="7"></label>
+            <button id="btnCreateGame">建立遊戲 (重設)</button>
+        </div>
+        <hr>
+        <div>
+            <select id="selectMode">
+                <option value="all">全員搶答</option>
+                <option value="cross">大十字</option>
+                <option value="square">九宮格</option>
+            </select>
+            <button id="btnDrawNumber">抽號並開始</button>
+            <h3 id="lastDrawn">抽中: -</h3>
+        </div>
+        <hr>
+        <button id="btnReset">清除按鈴 (問下一題)</button>
+    </div>
+
+    <div class="logs">
+        <h3>🟢 有效搶答</h3>
+        <div id="log-valid"></div>
+        <h3>🔴 違規/禁答</h3>
+        <div id="log-invalid"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let layout = {
+            rows: 0,
+            cols: 0
+        };
+        const gridContainer = document.getElementById('grid-container');
+        const logValid = document.getElementById('log-valid');
+        const logInvalid = document.getElementById('log-invalid');
+
+        // --- 繪製網格 ---
+        function drawGrid() {
+            layout.rows = parseInt(document.getElementById('txtRows').value);
+            layout.cols = parseInt(document.getElementById('txtCols').value);
+            gridContainer.innerHTML = '';
+            gridContainer.style.gridTemplateColumns = `repeat(${layout.cols}, 60px)`;
+
+            for (let i = 1; i <= layout.rows * layout.cols; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.id = `seat-${i}`;
+                cell.innerText = i;
+                gridContainer.appendChild(cell);
+            }
+        }
+
+        // --- 事件監聽 ---
+        document.getElementById('btnCreateGame').onclick = () => {
+            drawGrid();
+            socket.emit('host:createGame', layout);
+            logValid.innerHTML = '';
+            logInvalid.innerHTML = '';
+            document.getElementById('lastDrawn').innerText = '抽中: -';
+        };
+
+        document.getElementById('btnDrawNumber').onclick = () => {
+            const total = layout.rows * layout.cols;
+            if (total === 0) {
+                alert('請先建立遊戲');
+                return;
+            }
+            const mode = document.getElementById('selectMode').value;
+            const targetNumber = Math.floor(Math.random() * total) + 1;
+
+            document.getElementById('lastDrawn').innerText = `抽中: ${targetNumber}`;
+            logValid.innerHTML = '';
+            logInvalid.innerHTML = '';
+
+            socket.emit('host:setMode', {
+                mode: mode,
+                target: targetNumber
+            });
+        };
+
+        document.getElementById('btnReset').onclick = () => {
+            logValid.innerHTML = '';
+            logInvalid.innerHTML = '';
+            socket.emit('host:reset');
+            // 重設網格顏色
+            const cells = document.querySelectorAll('.grid-cell.active, .grid-cell.locked');
+            cells.forEach(c => c.classList.remove('active', 'locked'));
+            // 重新發送模式，以便學生端重設
+            const target = parseInt(document.getElementById('lastDrawn').innerText.split(': ')[1]);
+            if (target) {
+                const mode = document.getElementById('selectMode').value;
+                socket.emit('host:setMode', {
+                    mode: mode,
+                    target: target
+                });
+            }
+        };
+
+        // --- Socket 事件 ---
+        socket.on('host:playerJoined', (seat) => {
+            document.getElementById(`seat-${seat}`) ? .classList.add('connected');
+        });
+
+        socket.on('host:playerLeft', (seat) => {
+            document.getElementById(`seat-${seat}`) ? .classList.remove('connected', 'active', 'locked');
+        });
+
+        socket.on('host:updateGridState', ({
+            active,
+            locked
+        }) => {
+            // 先清除舊狀態
+            document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('active', 'locked'));
+            // 設定新狀態
+            active.forEach(seat => document.getElementById(`seat-${seat}`) ? .classList.add('active'));
+            locked.forEach(seat => document.getElementById(`seat-${seat}`) ? .classList.add('locked'));
+        });
+
+        socket.on('host:logBuzz', ({
+            seat,
+            valid,
+            time
+        }) => {
+            const logEntry = document.createElement('div');
+            logEntry.innerText = `座號 ${seat} (${time % 10000}ms)`;
+
+            if (valid) {
+                logValid.prepend(logEntry);
+            } else {
+                logInvalid.prepend(logEntry);
+            }
+        });
+
+        // 頁面載入時先畫一次
+        drawGrid();
+    </script>
+</body>
+
+</html>

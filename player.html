@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>搶答器</title>
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background-color 0.3s;
+        }
+        
+        #join-container {
+            text-align: center;
+        }
+        
+        #buzzer-container {
+            display: none;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #buzzer {
+            width: 100%;
+            height: 100%;
+            border: none;
+            font-size: 48px;
+            font-weight: bold;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #buzzer-text {
+            font-size: 6vw;
+        }
+        
+        #buzzer-subtext {
+            font-size: 3vw;
+            margin-top: 10px;
+        }
+        /* --- 狀態顏色 (已修改) --- */
+        /* 待機 (灰色) */
+        
+        .state-standby {
+            background-color: #777;
+        }
+        /* 準備搶答 (藍色) - 無論是否在範圍內，都顯示此顏色 */
+        
+        .state-ready {
+            background-color: #007bff;
+            cursor: pointer;
+        }
+        /* 已按鈴 (黃色) */
+        
+        .state-buzzed {
+            background-color: #ffc107;
+        }
+    </style>
+</head>
+
+<body class="state-standby">
+
+    <div id="join-container">
+        <label for="txtSeatNumber" style="font-size: 24px;">輸入你的座號:</label>
+        <input type="number" id="txtSeatNumber" style="font-size: 24px; width: 100px; text-align: center;">
+        <button id="btnJoin" style="font-size: 24px; padding: 10px;">加入</button>
+    </div>
+
+    <div id="buzzer-container">
+        <button id="buzzer">
+            <span id="buzzer-text">...</span>
+            <span id="buzzer-subtext">(座號: -)</span>
+        </button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const joinContainer = document.getElementById('join-container');
+        const buzzerContainer = document.getElementById('buzzer-container');
+        const buzzer = document.getElementById('buzzer');
+        const buzzerText = document.getElementById('buzzer-text');
+        const buzzerSubtext = document.getElementById('buzzer-subtext');
+        const txtSeatNumber = document.getElementById('txtSeatNumber');
+        let mySeat = 0;
+
+        document.getElementById('btnJoin').onclick = () => {
+            mySeat = parseInt(txtSeatNumber.value);
+            if (mySeat > 0) {
+                socket.emit('player:joinGame', mySeat);
+                joinContainer.style.display = 'none';
+                buzzerContainer.style.display = 'block';
+                buzzerSubtext.innerText = `(座號: ${mySeat})`;
+                setState('standby');
+            }
+        };
+
+        buzzer.onclick = () => {
+            const state = document.body.className;
+            // 只要不是 'standby' 或 'buzzed' 狀態 (即為 'ready' 狀態)，就允許發送按鈴
+            if (state === 'state-ready') {
+                socket.emit('player:buzz');
+                setState('buzzed'); // 按下後變為 '已按鈴' 狀態
+            }
+        };
+
+        socket.on('player:setState', (newState) => {
+            // newState 會是 'standby', 'active', 'locked'
+            setState(newState);
+        });
+
+        // --- setState 函式 (已修改) ---
+        function setState(state) {
+            // state 可能是 'standby', 'active', 'locked', 'buzzed'
+            buzzer.disabled = false;
+
+            switch (state) {
+                case 'active':
+                case 'locked':
+                    // *** 關鍵修改 ***
+                    // 無論是 'active' 還是 'locked'，
+                    // 學生的畫面都統一顯示為 'state-ready' (藍色)
+                    document.body.className = `state-ready`;
+                    buzzerText.innerText = '搶答！'; // 文字也統一
+                    break;
+                case 'buzzed':
+                    document.body.className = `state-buzzed`;
+                    buzzerText.innerText = '已按鈴!';
+                    buzzer.disabled = true; // 按下後禁用，直到老師重設
+                    break;
+                case 'standby':
+                default:
+                    document.body.className = `state-standby`;
+                    buzzerText.innerText = '等待老師...';
+                    break;
+            }
+        }
+    </script>
+</body>
+
+</html>
